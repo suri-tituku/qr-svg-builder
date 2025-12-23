@@ -429,7 +429,7 @@ const page: React.CSSProperties = {
   justifyContent: "center",
   padding: "48px 16px",
   background:
-    "radial-gradient(1000px 500px at 50% 0%, #1f2937 0%, #0b0b0b 70%)",
+    "radial-gradient(1200px 600px at 50% 0%, #000000ff 0%, #292929ff 55%, #444444ff 100%)",
 };
 
 const card: React.CSSProperties = {
