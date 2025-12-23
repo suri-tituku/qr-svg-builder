@@ -16,7 +16,7 @@ export default function QrProtectedPage() {
       />
 
       <audio controls style={{ width: "100%", marginTop: 16 }}>
-        <source src="/Raa_Baa.mp3" type="audio/mpeg" />
+        <source src="./Raa_Baa.mp3" type="audio/mpeg" />
         Your browser does not support audio.
       </audio>
     </div>
