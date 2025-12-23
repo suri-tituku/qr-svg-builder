@@ -25,6 +25,8 @@ export default function QrProtectedPage() {
   const { id } = useParams();
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  const lastAllowedTime = useRef(0); // 🔒 prevents seeking
+
   const [sessionLeft, setSessionLeft] = useState(0);
   const [idleLeft, setIdleLeft] = useState(0);
   const [toast, setToast] = useState("");
@@ -32,6 +34,9 @@ export default function QrProtectedPage() {
     getRemainingPlays()
   );
 
+  /* -------------------------------------------------------------------------- */
+  /* 🔐 Session Guard                                                           */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
     if (!isSessionValid()) {
       clearSession();
@@ -61,7 +66,6 @@ export default function QrProtectedPage() {
       "touchstart",
       "touchmove",
     ];
-
     const onActivity = () => updateActivity();
     events.forEach((e) => window.addEventListener(e, onActivity));
 
@@ -73,6 +77,36 @@ export default function QrProtectedPage() {
     };
   }, [navigate, id]);
 
+  /* -------------------------------------------------------------------------- */
+  /* 🎵 AUDIO CONTROLS                                                          */
+  /* -------------------------------------------------------------------------- */
+
+  // ❌ Block seeking
+  function handleSeeking() {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    audio.currentTime = lastAllowedTime.current;
+  }
+
+  // ✅ Track allowed time
+  function handleTimeUpdate() {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (!audio.seeking) {
+      lastAllowedTime.current = audio.currentTime;
+    }
+  }
+
+  // ✅ Count ONLY when audio finishes fully
+  function handleEnded() {
+    incrementAudioPlay();
+    setRemainingPlays(getRemainingPlays());
+    lastAllowedTime.current = 0;
+  }
+
+  // ❌ Prevent play if limit reached
   function handlePlay(
     e: React.SyntheticEvent<HTMLAudioElement>
   ) {
@@ -80,25 +114,10 @@ export default function QrProtectedPage() {
       e.preventDefault();
       e.currentTarget.pause();
       setToast("Your limit reached. Try it tomorrow.");
-      return;
     }
-
-    incrementAudioPlay();
-    setRemainingPlays(getRemainingPlays());
   }
 
   const audioDisabled = remainingPlays === 0;
-
-  const lockOverlay = {
-    position: "absolute" as const,
-    inset: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 14,
-    fontWeight: 600,
-    color: "#991b1b",
-  };
 
   return (
     <div style={container}>
@@ -124,7 +143,7 @@ export default function QrProtectedPage() {
 
       {/* Remaining Plays */}
       <div style={playCounter}>
-        🎵 Remaining plays today:{" "}
+        🎵 Remaining full plays today:{" "}
         <strong>{remainingPlays}</strong>
       </div>
 
@@ -132,12 +151,16 @@ export default function QrProtectedPage() {
         <audio
           ref={audioRef}
           controls
+          controlsList="nodownload noplaybackrate"
           style={{
             width: "100%",
             opacity: audioDisabled ? 0.5 : 1,
             pointerEvents: audioDisabled ? "none" : "auto",
           }}
           onPlay={handlePlay}
+          onTimeUpdate={handleTimeUpdate}
+          onSeeking={handleSeeking}
+          onEnded={handleEnded}
         >
           <source src="Raa_Baa.mp3" type="audio/mpeg" />
         </audio>
@@ -159,6 +182,10 @@ export default function QrProtectedPage() {
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* 🎨 Styles                                                                   */
+/* -------------------------------------------------------------------------- */
+
 const container = {
   maxWidth: 480,
   margin: "60px auto",
@@ -179,4 +206,16 @@ const playCounter = {
   marginTop: 14,
   fontSize: 14,
   fontWeight: 600,
+};
+
+const lockOverlay = {
+  position: "absolute" as const,
+  inset: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 14,
+  fontWeight: 600,
+  color: "#991b1b",
+  pointerEvents: "none" as const,
 };
