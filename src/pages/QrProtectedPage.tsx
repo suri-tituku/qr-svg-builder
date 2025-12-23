@@ -427,7 +427,7 @@ const page: React.CSSProperties = {
   display: "flex",
   alignItems: "flex-start",
   justifyContent: "center",
-  padding: "48px 16px",
+  //padding: "48px 16px",
   background:
     "radial-gradient(1200px 600px at 50% 0%, #000000ff 0%, #292929ff 55%, #444444ff 100%)",
 };
