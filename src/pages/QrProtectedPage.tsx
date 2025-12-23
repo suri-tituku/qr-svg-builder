@@ -53,6 +53,7 @@ export default function QrProtectedPage() {
 
     const timer = setInterval(() => {
       const times = getRemainingTimes();
+
       if (!times || !isSessionValid()) {
         clearSession();
         navigate(`/qr/${id}`);
@@ -87,7 +88,7 @@ export default function QrProtectedPage() {
   /* ------------------------------------------------------------------------ */
 
   function handleFullEnded() {
-    // ✅ SINGLE SOURCE OF TRUTH for counting
+    // ✅ SINGLE SOURCE OF TRUTH
     incrementAudioPlay();
     setRemainingPlays(getRemainingPlays());
   }
@@ -130,7 +131,7 @@ export default function QrProtectedPage() {
           />
         </div>
 
-        {/* 🎵 Howler-based Audio Player */}
+        {/* 🎵 Howler-based Audio Player (SAFE) */}
         <CustomAudioPlayer
           src={`${import.meta.env.BASE_URL}Raa_Baa_30s.mp3`}
           remainingPlays={remainingPlays}
