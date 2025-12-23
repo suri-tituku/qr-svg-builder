@@ -1,9 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Pause, Play, RotateCcw, Volume2 } from "lucide-react";
-
-/* -------------------------------------------------------------------------- */
-/* 🧩 Types                                                                    */
-/* -------------------------------------------------------------------------- */
+import { Howl } from "howler";
 
 type Props = {
   src: string;
@@ -11,10 +7,6 @@ type Props = {
   onBlocked: (msg: string) => void;
   onFullEnded: () => void; // ✅ count ONLY when ended
 };
-
-/* -------------------------------------------------------------------------- */
-/* 🧩 Helpers                                                                  */
-/* -------------------------------------------------------------------------- */
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -28,9 +20,8 @@ function formatTime(sec: number) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 🎧 Readonly Waveform (PURE, NO MUTATION)                                   */
+/* 🎧 Readonly Waveform (no animation, deterministic)                          */
 /* -------------------------------------------------------------------------- */
-
 function hash(seed: string, index: number) {
   let h = 2166136261 ^ index;
   for (let i = 0; i < seed.length; i++) {
@@ -51,9 +42,7 @@ function WaveformReadonly({
 
   const bars = useMemo(() => {
     const count = 56;
-    return Array.from({ length: count }, (_, i) => {
-      return 0.18 + hash(seed, i) * 0.82;
-    });
+    return Array.from({ length: count }, (_, i) => 0.18 + hash(seed, i) * 0.82);
   }, [seed]);
 
   useEffect(() => {
@@ -76,9 +65,7 @@ function WaveformReadonly({
     const barW = Math.floor((width - gap * (bars.length - 1)) / bars.length);
     const mid = height / 2;
 
-    const activeBars = Math.floor(
-      clamp(progress, 0, 1) * bars.length
-    );
+    const activeBars = Math.floor(clamp(progress, 0, 1) * bars.length);
 
     for (let i = 0; i < bars.length; i++) {
       const amp = bars[i];
@@ -99,7 +86,7 @@ function WaveformReadonly({
 }
 
 /* -------------------------------------------------------------------------- */
-/* 🎵 Custom Audio Player                                                      */
+/* 🎵 Howler Player                                                             */
 /* -------------------------------------------------------------------------- */
 
 export default function CustomAudioPlayer({
@@ -108,136 +95,159 @@ export default function CustomAudioPlayer({
   onBlocked,
   onFullEnded,
 }: Props) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const howlRef = useRef<Howl | null>(null);
+  const rafRef = useRef<number | null>(null);
 
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0); // seconds
+  const [current, setCurrent] = useState(0); // seconds
   const [volume, setVolume] = useState(0.9);
 
   const disabled = remainingPlays <= 0;
   const progress = duration > 0 ? current / duration : 0;
 
-  /* ------------------------------------------------------------------------ */
-  /* 🔁 Safe restart handling (fixes 2nd play issue)                           */
-  /* ------------------------------------------------------------------------ */
-
-  const ensureRestartable = (a: HTMLAudioElement) => {
-    if (a.ended || (a.duration && a.currentTime >= a.duration - 0.05)) {
-      a.pause();
-      a.currentTime = 0;
-      a.load();
-      setCurrent(0);
-      setIsPlaying(false);
-    }
+  const stopRAF = () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
   };
 
-  const togglePlay = async () => {
-    const a = audioRef.current;
-    if (!a) return;
-
-    if (disabled) {
-      onBlocked("Your limit reached. Try it tomorrow.");
-      return;
-    }
-
-    ensureRestartable(a);
-
-    try {
-      if (a.paused) {
-        await a.play();
-        setIsPlaying(true);
-      } else {
-        a.pause();
-        setIsPlaying(false);
-      }
-    } catch {
-      onBlocked("Unable to play audio. Please tap again.");
-      setIsPlaying(false);
-    }
+  const startRAF = () => {
+    stopRAF();
+    const tick = () => {
+      const h = howlRef.current;
+      if (!h) return;
+      const pos = Number(h.seek()) || 0;
+      setCurrent(pos);
+      if (h.playing()) rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
   };
 
-  const restart = async () => {
-    const a = audioRef.current;
-    if (!a) return;
-
-    if (disabled) {
-      onBlocked("Your limit reached. Try it tomorrow.");
-      return;
-    }
-
-    a.pause();
-    a.currentTime = 0;
-    a.load();
+  // Build Howl once per src
+  useEffect(() => {
+    stopRAF();
+    setIsReady(false);
+    setIsPlaying(false);
+    setDuration(0);
     setCurrent(0);
 
-    try {
-      await a.play();
-      setIsPlaying(true);
-    } catch {
-      setIsPlaying(false);
-      onBlocked("Unable to play audio. Please tap Play.");
+    // cleanup old
+    if (howlRef.current) {
+      howlRef.current.unload();
+      howlRef.current = null;
+    }
+
+    const h = new Howl({
+      src: [src],
+      html5: true, // ✅ better mobile reliability + larger files
+      volume,
+      preload: true,
+      onload: () => {
+        const d = h.duration() || 0;
+        setDuration(d);
+        setIsReady(true);
+      },
+      onplay: () => {
+        setIsPlaying(true);
+        startRAF();
+      },
+      onpause: () => {
+        setIsPlaying(false);
+        stopRAF();
+      },
+      onstop: () => {
+        setIsPlaying(false);
+        stopRAF();
+      },
+      onend: () => {
+        // ✅ COUNT ONLY HERE
+        setIsPlaying(false);
+        stopRAF();
+        setCurrent(duration || h.duration() || 0);
+
+        onFullEnded();
+
+        // ✅ make replay always work
+        h.stop();
+        h.seek(0);
+        setCurrent(0);
+      },
+      onloaderror: () => {
+        setIsReady(false);
+        onBlocked("Audio failed to load. Check file path / GitHub Pages base URL.");
+      },
+      onplayerror: () => {
+        setIsPlaying(false);
+        onBlocked("Browser blocked audio. Tap Play again.");
+        h.once("unlock", () => {
+          // user gesture unlock
+        });
+      },
+    });
+
+    howlRef.current = h;
+
+    return () => {
+      stopRAF();
+      if (howlRef.current) {
+        howlRef.current.unload();
+        howlRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src]);
+
+  // Volume updates
+  useEffect(() => {
+    const h = howlRef.current;
+    if (h) h.volume(volume);
+  }, [volume]);
+
+  const togglePlay = async () => {
+    const h = howlRef.current;
+    if (!h) return;
+
+    if (disabled) {
+      onBlocked("Your limit reached. Try it tomorrow.");
+      return;
+    }
+
+    if (!isReady) {
+      onBlocked("Audio is still loading… try again.");
+      return;
+    }
+
+    // ✅ if ended or near end, reset before play
+    const d = h.duration() || duration;
+    const pos = Number(h.seek()) || 0;
+    if (d > 0 && pos >= d - 0.05) {
+      h.stop();
+      h.seek(0);
+      setCurrent(0);
+    }
+
+    if (h.playing()) {
+      h.pause();
+    } else {
+      h.play(); // ✅ user click gesture triggers play
     }
   };
 
-  /* ------------------------------------------------------------------------ */
-  /* 🎧 Native audio events                                                    */
-  /* ------------------------------------------------------------------------ */
+  const restart = () => {
+    const h = howlRef.current;
+    if (!h) return;
 
-  useEffect(() => {
-    const a = audioRef.current;
-    if (!a) return;
+    if (disabled) {
+      onBlocked("Your limit reached. Try it tomorrow.");
+      return;
+    }
 
-    a.volume = volume;
-
-    const onLoaded = () => {
-      setDuration(a.duration || 0);
-      setIsReady(true);
-    };
-
-    const onTime = () => setCurrent(a.currentTime || 0);
-
-    const onPlayEvt = () => {
-      if (disabled) {
-        a.pause();
-        setIsPlaying(false);
-        onBlocked("Your limit reached. Try it tomorrow.");
-        return;
-      }
-      setIsPlaying(true);
-    };
-
-    const onPauseEvt = () => setIsPlaying(false);
-
-    const onEndedEvt = () => {
-      setIsPlaying(false);
-      setCurrent(a.duration || 0);
-      onFullEnded();
-
-      a.currentTime = 0;
-      a.load();
-      setCurrent(0);
-    };
-
-    a.addEventListener("loadedmetadata", onLoaded);
-    a.addEventListener("timeupdate", onTime);
-    a.addEventListener("play", onPlayEvt);
-    a.addEventListener("pause", onPauseEvt);
-    a.addEventListener("ended", onEndedEvt);
-
-    return () => {
-      a.removeEventListener("loadedmetadata", onLoaded);
-      a.removeEventListener("timeupdate", onTime);
-      a.removeEventListener("play", onPlayEvt);
-      a.removeEventListener("pause", onPauseEvt);
-      a.removeEventListener("ended", onEndedEvt);
-    };
-  }, [disabled, onBlocked, onFullEnded, volume]);
-
-  /* ------------------------------------------------------------------------ */
-  /* 🧾 UI                                                                     */
-  /* ------------------------------------------------------------------------ */
+    h.stop();
+    h.seek(0);
+    setCurrent(0);
+    h.play();
+  };
 
   return (
     <div style={card}>
@@ -263,10 +273,11 @@ export default function CustomAudioPlayer({
           }}
           title="Restart"
         >
-          <RotateCcw size={18} />
+          ⟲
         </button>
       </div>
 
+      {/* readonly waveform */}
       <WaveformReadonly seed={src} progress={progress} />
 
       <div style={controlsRow}>
@@ -280,36 +291,34 @@ export default function CustomAudioPlayer({
             cursor: disabled || !isReady ? "not-allowed" : "pointer",
           }}
         >
-          {isPlaying ? <Pause size={20} /> : <Play size={20} />}
-          {isPlaying ? "Pause" : "Play"}
+          {isPlaying ? "⏸ Pause" : "▶ Play"}
         </button>
 
         <div style={timeBox}>
           <span style={time}>{formatTime(current)}</span>
-          <span>/</span>
+          <span style={{ opacity: 0.5 }}>/</span>
           <span style={time}>{formatTime(duration)}</span>
         </div>
 
         <div style={volBox}>
-          <Volume2 size={18} />
+          🔊
           <input
+            aria-label="Volume"
             type="range"
             min={0}
             max={1}
             step={0.01}
             value={volume}
             onChange={(e) => setVolume(Number(e.target.value))}
+            style={{ width: 120 }}
           />
         </div>
       </div>
 
-      <audio ref={audioRef} preload="metadata">
-        <source src={src} type="audio/mpeg" />
-      </audio>
-
-      {disabled && (
-        <div style={lockNote}>
-          🔒 Limit reached. Please try again tomorrow.
+      {disabled && <div style={lockNote}>🔒 Limit reached. Please try again tomorrow.</div>}
+      {!disabled && (
+        <div style={hintNote}>
+          ✅ Counts only when the song finishes • 🔒 Seeking disabled (no scrub UI)
         </div>
       )}
     </div>
@@ -391,7 +400,8 @@ const iconBtn: React.CSSProperties = {
   border: "1px solid #e5e7eb",
   background: "#fff",
   borderRadius: 12,
-  padding: 10,
+  padding: "10px 12px",
+  fontWeight: 900,
 };
 
 const timeBox: React.CSSProperties = {
@@ -429,4 +439,15 @@ const lockNote: React.CSSProperties = {
   color: "#9f1239",
   fontWeight: 700,
   fontSize: 13,
+};
+
+const hintNote: React.CSSProperties = {
+  marginTop: 10,
+  padding: 10,
+  borderRadius: 12,
+  background: "#f3f4f6",
+  border: "1px solid #e5e7eb",
+  color: "#111827",
+  fontWeight: 700,
+  fontSize: 12,
 };
