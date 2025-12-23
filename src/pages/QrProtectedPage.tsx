@@ -129,7 +129,8 @@ export default function QrProtectedPage() {
 
         {/* Howler Audio Player */}
         <CustomAudioPlayer
-          src={`${import.meta.env.BASE_URL}Raa_Baa.mp3`}
+          src={`${import.meta.env.BASE_URL}Raa_Baa_30s.mp3
+`}
           remainingPlays={remainingPlays}
           onBlocked={(msg) => setToast(msg)}
           onFullEnded={handleFullEnded}
