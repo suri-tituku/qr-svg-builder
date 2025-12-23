@@ -427,7 +427,7 @@ const page: React.CSSProperties = {
   display: "flex",
   alignItems: "flex-start",
   justifyContent: "center",
-  padding: "48px 16px",
+  padding: "0px !important",
   background:
     "radial-gradient(1200px 600px at 50% 0%, #000000ff 0%, #292929ff 55%, #444444ff 100%)",
 };
@@ -438,7 +438,8 @@ const card: React.CSSProperties = {
   background: "#fff",
   border: "1px solid #e5e7eb",
   borderRadius: 16,
-  padding: 20,
+  padding: "32px",
+  margin: "24px",
   boxShadow: "0 12px 30px rgba(0,0,0,0.06)",
 };
 
