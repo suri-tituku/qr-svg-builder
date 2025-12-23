@@ -422,26 +422,24 @@ function handleEnded() {
 /* 🎨 Styles                                                                   */
 /* -------------------------------------------------------------------------- */
 
-const page: React.CSSProperties = {
-  minHeight: "100vh",
-  display: "flex",
-  alignItems: "flex-start",
-  justifyContent: "center",
-  padding: "0px !important",
-  background:
-    "radial-gradient(1200px 600px at 50% 0%, #000000ff 0%, #292929ff 55%, #444444ff 100%)",
-};
+  const page: React.CSSProperties = {
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background:
+      "radial-gradient(1200px 600px at 50% 0%, #000000ff 0%, #292929ff 55%, #444444ff 100%)",
+  };
 
-const card: React.CSSProperties = {
-  width: "100%",
-  maxWidth: 520,
-  background: "#fff",
-  border: "1px solid #e5e7eb",
-  borderRadius: 16,
-  padding: "32px",
-  margin: "24px",
-  boxShadow: "0 12px 30px rgba(0,0,0,0.06)",
-};
+  const card: React.CSSProperties = {
+    width: "100%",
+    maxWidth: 520,
+    padding: 32,
+    margin: 24,
+    background: "#fff",
+    borderRadius: 16,
+    boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
+  };
 
 const header: React.CSSProperties = {
   textAlign: "center",
