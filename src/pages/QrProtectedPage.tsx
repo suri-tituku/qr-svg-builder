@@ -154,12 +154,9 @@ function handleEnded() {
 
   countedThisRun.current = true;
   startedThisRun.current = false;
-  userInitiated.current = false;
 
   incrementAudioPlay();
-
-  const updated = getRemainingPlays();
-  setRemainingPlays(updated);
+  setRemainingPlays(getRemainingPlays());
 
   const a = audioRef.current;
   if (a) {
@@ -174,37 +171,36 @@ function handleEnded() {
 
 
 
+
   function handlePause() {
     setIsPlaying(false);
   }
 
-  function handlePlayNativeEvent(e: React.SyntheticEvent<HTMLAudioElement>) {
-    // Safety: if limit reached, block play even if something triggers audio.play()
-    if (!canPlayAudio()) {
-      e.preventDefault();
-      e.currentTarget.pause();
-      setIsPlaying(false);
-      setToast("Your limit reached. Try it tomorrow.");
-      return;
-    }
-
-    // Prevent autoplay / weird triggers: require our button click to set userInitiated
-    // If you want to allow direct play by clicking audio element, remove this block.
-    if (!userInitiated.current) {
-      e.preventDefault();
-      e.currentTarget.pause();
-      setIsPlaying(false);
-      return;
-    }
-
-    setIsPlaying(true);
-
-    // Mark this "run" started
-    if (!startedThisRun.current) {
-      startedThisRun.current = true;
-      countedThisRun.current = false;
-    }
+function handlePlayNativeEvent(e: React.SyntheticEvent<HTMLAudioElement>) {
+  if (!canPlayAudio()) {
+    e.preventDefault();
+    e.currentTarget.pause();
+    setIsPlaying(false);
+    setToast("Your limit reached. Try it tomorrow.");
+    return;
   }
+
+  // ✅ Now this is safe
+  if (!userInitiated.current) {
+    e.preventDefault();
+    e.currentTarget.pause();
+    setIsPlaying(false);
+    return;
+  }
+
+  setIsPlaying(true);
+
+  if (!startedThisRun.current) {
+    startedThisRun.current = true;
+    countedThisRun.current = false;
+  }
+}
+
 
   // If session becomes invalid while on page (timers), lock immediately
   useEffect(() => {
@@ -218,40 +214,34 @@ function handleEnded() {
   /* 🎛️ Custom Controls                                                         */
   /* -------------------------------------------------------------------------- */
 
-  async function togglePlay() {
-    const a = audioRef.current;
-    if (!a) return;
+async function togglePlay() {
+  const a = audioRef.current;
+  if (!a) return;
 
-    if (!isSessionValid()) {
-      clearSession();
-      navigate(`/qr/${id}`);
-      return;
-    }
-
-    if (!canPlayAudio() || audioDisabled) {
-      setToast("Your limit reached. Try it tomorrow.");
-      return;
-    }
-
-    try {
-      if (a.paused) {
-        userInitiated.current = true;
-
-        // 🔥 If audio is at end, reset before play
-        if (a.currentTime >= a.duration && a.duration > 0) {
-          a.currentTime = 0;
-          lastAllowedTime.current = 0;
-          setCurrent(0);
-        }
-
-        await a.play();
-      } else {
-        a.pause();
-      }
-    } catch {
-      setToast("Tap Play again (browser blocked playback).");
-    }
+  if (!canPlayAudio() || audioDisabled) {
+    setToast("Your limit reached. Try it tomorrow.");
+    return;
   }
+
+  try {
+    if (a.paused) {
+      userInitiated.current = true; // ✅ ARM IT HERE
+
+      if (a.ended || a.currentTime >= a.duration) {
+        a.currentTime = 0;
+        lastAllowedTime.current = 0;
+        setCurrent(0);
+      }
+
+      await a.play();
+    } else {
+      a.pause();
+    }
+  } catch {
+    setToast("Tap Play again (browser blocked playback).");
+  }
+}
+
 
 
   function restartAudio() {
