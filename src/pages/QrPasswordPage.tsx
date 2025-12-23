@@ -10,12 +10,23 @@ export default function QrPasswordPage() {
   const [error, setError] = useState("");
 
   function handleSubmit() {
-    if (password === CORRECT_PASSWORD) {
-      navigate(`/qr/${id}/content`);
-    } else {
-      setError("Invalid password");
-    }
+  if (password === CORRECT_PASSWORD) {
+    const now = Date.now();
+
+    sessionStorage.setItem(
+      "qrSession",
+      JSON.stringify({
+        unlockedAt: now,
+        lastActivityAt: now,
+      })
+    );
+
+    navigate(`/qr/${id}/content`);
+  } else {
+    setError("Invalid password");
   }
+}
+
 
   return (
     <div style={container}>

@@ -4,7 +4,7 @@ import type { ErrorLevel } from "../components/QrSvg";
 import { downloadSvg } from "../utils/downloadSvg";
 
 export default function QrBuilder() {
-  const [value, setValue] = useState("https://example.com");
+  const [value, setValue] = useState("https://suri-tituku.github.io/qr-svg-builder/#/qr/test123");
   const [fgColor, setFgColor] = useState("#000000");
   const [bgColor, setBgColor] = useState("#ffffff");
   const [size, setSize] = useState(320);
