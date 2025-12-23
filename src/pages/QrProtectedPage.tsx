@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   isSessionValid,
@@ -6,6 +6,12 @@ import {
   clearSession,
   getRemainingTimes,
 } from "../utils/qrSession";
+import {
+  canPlayAudio,
+  incrementAudioPlay,
+  getRemainingPlays,
+} from "../utils/audioLimit";
+import Toast from "../components/Toast";
 
 function format(ms: number) {
   const total = Math.ceil(ms / 1000);
@@ -17,19 +23,22 @@ function format(ms: number) {
 export default function QrProtectedPage() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [sessionLeft, setSessionLeft] = useState(0);
   const [idleLeft, setIdleLeft] = useState(0);
+  const [toast, setToast] = useState("");
+  const [remainingPlays, setRemainingPlays] = useState(
+    getRemainingPlays()
+  );
 
   useEffect(() => {
-    // Initial guard
     if (!isSessionValid()) {
       clearSession();
       navigate(`/qr/${id}`);
       return;
     }
 
-    // Tick every second
     const timer = setInterval(() => {
       const times = getRemainingTimes();
 
@@ -41,9 +50,9 @@ export default function QrProtectedPage() {
 
       setSessionLeft(times.sessionRemaining);
       setIdleLeft(times.idleRemaining);
+      setRemainingPlays(getRemainingPlays());
     }, 1000);
 
-    // Activity listeners
     const events = [
       "mousemove",
       "mousedown",
@@ -58,15 +67,44 @@ export default function QrProtectedPage() {
 
     return () => {
       clearInterval(timer);
-      events.forEach((e) => window.removeEventListener(e, onActivity));
+      events.forEach((e) =>
+        window.removeEventListener(e, onActivity)
+      );
     };
   }, [navigate, id]);
+
+  function handlePlay(
+    e: React.SyntheticEvent<HTMLAudioElement>
+  ) {
+    if (!canPlayAudio()) {
+      e.preventDefault();
+      e.currentTarget.pause();
+      setToast("Your limit reached. Try it tomorrow.");
+      return;
+    }
+
+    incrementAudioPlay();
+    setRemainingPlays(getRemainingPlays());
+  }
+
+  const audioDisabled = remainingPlays === 0;
+
+  const lockOverlay = {
+    position: "absolute" as const,
+    inset: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 14,
+    fontWeight: 600,
+    color: "#991b1b",
+  };
 
   return (
     <div style={container}>
       <h2>🔓 Protected Content</h2>
 
-      {/* ⏳ Timers */}
+      {/* Timers */}
       <div style={timerBox}>
         <div>
           ⌛ Session expires in:{" "}
@@ -84,13 +122,39 @@ export default function QrProtectedPage() {
         style={{ width: "100%", borderRadius: 12 }}
       />
 
-      <audio controls style={{ width: "100%", marginTop: 16 }}>
-        <source src="Raa_Baa.mp3" type="audio/mpeg" />
-      </audio>
+      {/* Remaining Plays */}
+      <div style={playCounter}>
+        🎵 Remaining plays today:{" "}
+        <strong>{remainingPlays}</strong>
+      </div>
 
-      <p style={{ marginTop: 12, fontSize: 13, color: "#555" }}>
-        This page auto-locks after inactivity or expiry.
-      </p>
+      <div style={{ position: "relative", marginTop: 10 }}>
+        <audio
+          ref={audioRef}
+          controls
+          style={{
+            width: "100%",
+            opacity: audioDisabled ? 0.5 : 1,
+            pointerEvents: audioDisabled ? "none" : "auto",
+          }}
+          onPlay={handlePlay}
+        >
+          <source src="Raa_Baa.mp3" type="audio/mpeg" />
+        </audio>
+
+        {audioDisabled && (
+          <div style={lockOverlay}>
+            🔒 Limit reached
+          </div>
+        )}
+      </div>
+
+      {toast && (
+        <Toast
+          message={toast}
+          onClose={() => setToast("")}
+        />
+      )}
     </div>
   );
 }
@@ -109,4 +173,10 @@ const timerBox = {
   padding: 12,
   marginBottom: 16,
   fontSize: 14,
+};
+
+const playCounter = {
+  marginTop: 14,
+  fontSize: 14,
+  fontWeight: 600,
 };
