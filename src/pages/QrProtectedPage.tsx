@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+
 import {
   isSessionValid,
   updateActivity,
   clearSession,
   getRemainingTimes,
 } from "../utils/qrSession";
+
 import {
   incrementAudioPlay,
   getRemainingPlays,
 } from "../utils/audioLimit";
+
 import Toast from "../components/Toast";
 import CustomAudioPlayer from "../components/CustomAudioPlayer";
 
@@ -38,7 +41,7 @@ export default function QrProtectedPage() {
   const [remainingPlays, setRemainingPlays] = useState(getRemainingPlays());
 
   /* ------------------------------------------------------------------------ */
-  /* 🔐 Session Guard                                                         */
+  /* 🔐 Session Guard                                                          */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -80,17 +83,17 @@ export default function QrProtectedPage() {
   }, [navigate, id]);
 
   /* ------------------------------------------------------------------------ */
-  /* 🎵 Play Count — ONLY ON FULL END                                         */
+  /* 🎵 Play Count — ONLY ON FULL END                                          */
   /* ------------------------------------------------------------------------ */
 
   function handleFullEnded() {
-    // ✅ This is the ONLY place where play is counted
+    // ✅ SINGLE SOURCE OF TRUTH for counting
     incrementAudioPlay();
     setRemainingPlays(getRemainingPlays());
   }
 
   /* ------------------------------------------------------------------------ */
-  /* 🧾 UI                                                                    */
+  /* 🧾 UI                                                                     */
   /* ------------------------------------------------------------------------ */
 
   return (
@@ -127,10 +130,9 @@ export default function QrProtectedPage() {
           />
         </div>
 
-        {/* Howler Audio Player */}
+        {/* 🎵 Howler-based Audio Player */}
         <CustomAudioPlayer
-          src={`${import.meta.env.BASE_URL}Raa_Baa_30s.mp3
-`}
+          src={`${import.meta.env.BASE_URL}Raa_Baa_30s.mp3`}
           remainingPlays={remainingPlays}
           onBlocked={(msg) => setToast(msg)}
           onFullEnded={handleFullEnded}
