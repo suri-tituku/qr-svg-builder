@@ -109,9 +109,6 @@ export default function QrProtectedPage() {
   /* 🎵 Audio: strict rules (no seek, count on ended)                           */
   /* -------------------------------------------------------------------------- */
 
-  function syncRemainingPlays() {
-    setRemainingPlays(getRemainingPlays());
-  }
 
   function hardLockAndRedirect() {
     clearSession();
@@ -152,22 +149,30 @@ export default function QrProtectedPage() {
     }
   }
 
-  function handleEnded() {
-    // Count ONLY when audio finishes
-    if (countedThisRun.current) return;
+function handleEnded() {
+  if (countedThisRun.current) return;
 
-    countedThisRun.current = true;
-    startedThisRun.current = false;
-    userInitiated.current = false;
+  countedThisRun.current = true;
+  startedThisRun.current = false;
+  userInitiated.current = false;
 
-    incrementAudioPlay();
-    syncRemainingPlays();
+  incrementAudioPlay();
 
-    // reset time trackers
-    lastAllowedTime.current = 0;
-    setIsPlaying(false);
-    setCurrent(0);
+  const updated = getRemainingPlays();
+  setRemainingPlays(updated);
+
+  const a = audioRef.current;
+  if (a) {
+    a.pause();
+    a.currentTime = 0;
   }
+
+  lastAllowedTime.current = 0;
+  setIsPlaying(false);
+  setCurrent(0);
+}
+
+
 
   function handlePause() {
     setIsPlaying(false);
@@ -218,32 +223,36 @@ export default function QrProtectedPage() {
     if (!a) return;
 
     if (!isSessionValid()) {
-      hardLockAndRedirect();
+      clearSession();
+      navigate(`/qr/${id}`);
       return;
     }
 
-    if (!canPlayAudio()) {
-      setToast("Your limit reached. Try it tomorrow.");
-      return;
-    }
-
-    if (audioDisabled) {
+    if (!canPlayAudio() || audioDisabled) {
       setToast("Your limit reached. Try it tomorrow.");
       return;
     }
 
     try {
       if (a.paused) {
-        userInitiated.current = true; // ✅ allow play via our button
+        userInitiated.current = true;
+
+        // 🔥 If audio is at end, reset before play
+        if (a.currentTime >= a.duration && a.duration > 0) {
+          a.currentTime = 0;
+          lastAllowedTime.current = 0;
+          setCurrent(0);
+        }
+
         await a.play();
       } else {
         a.pause();
       }
     } catch {
-      // Safari/iOS sometimes blocks play without user gesture.
-      setToast("Tap Play again to start audio (browser blocked autoplay).");
+      setToast("Tap Play again (browser blocked playback).");
     }
   }
+
 
   function restartAudio() {
     const a = audioRef.current;
