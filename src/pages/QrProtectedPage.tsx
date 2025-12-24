@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { useNavigate, useParams } from "react-router-dom";
 import CustomVideoPlayerUltra from "../components/CustomVideoPlayerUltra";
 import CustomAudioPlayerUltra from "../components/CustomAudioPlayerUltra";
+import HeartParticleOverlay from "../components/HeartParticleOverlay";
+
+
 
 
 import {
@@ -58,6 +62,8 @@ export default function QrProtectedPage() {
   const [videoRemaining, setVideoRemaining] = useState(0);
 
   const [limitReady, setLimitReady] = useState(false);
+
+  const [showParticles, setShowParticles] = useState(true);
 
   /* ------------------------------------------------------------------------ */
   /* ✅ Remote media URLs (GitHub Pages safe)                                  */
@@ -159,7 +165,25 @@ export default function QrProtectedPage() {
   /* ------------------------------------------------------------------------ */
   /* 🧾 UI                                                                     */
   /* ------------------------------------------------------------------------ */
-  return (
+return (
+    <>
+    {/* ❤️ Heart particles OVER the page */}
+    {showParticles && (
+      <HeartParticleOverlay
+        onFinish={() => setShowParticles(false)}
+      />
+    )}
+
+    {/* 🧠 Page is ALWAYS rendered */}
+  <motion.div
+    style={page}
+    initial={{ opacity: 0, scale: 0.96 }}
+    animate={{ opacity: 1, scale: 1 }}
+    transition={{
+      duration: 1,
+      ease: [0.22, 1, 0.36, 1], // smooth premium easing
+    }}
+  >
     <div style={page}>
       <div style={card}>
         <div style={header}>
@@ -213,6 +237,9 @@ export default function QrProtectedPage() {
         )}
       </div>
     </div>
+   </motion.div>
+  
+  </>
   );
 }
 

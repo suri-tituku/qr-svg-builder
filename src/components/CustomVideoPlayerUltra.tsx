@@ -549,8 +549,8 @@ const loadingOverlay: React.CSSProperties = {
 
 const centerBtn: React.CSSProperties = {
   position: "absolute",
-  top: "50%",
-  left: "50%",
+  top: "30%",
+  left: "45%",
   transform: "translate(-50%, -50%)",
   width: 62,
   height: 62,
