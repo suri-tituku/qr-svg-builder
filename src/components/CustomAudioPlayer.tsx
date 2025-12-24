@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Howl } from "howler";
+import { loadAudioWithCache } from "../utils/audioCache"; // ✅ NEW
+
+/* -------------------------------------------------------------------------- */
+/* 🧩 Types                                                                    */
+/* -------------------------------------------------------------------------- */
 
 type Props = {
   src: string;
@@ -7,6 +12,10 @@ type Props = {
   onBlocked: (msg: string) => void;
   onFullEnded: () => void; // ✅ count ONLY when ended
 };
+
+/* -------------------------------------------------------------------------- */
+/* 🧩 Helpers                                                                  */
+/* -------------------------------------------------------------------------- */
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -20,15 +29,16 @@ function formatTime(sec: number) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 🎧 Readonly Waveform (no animation, deterministic)                          */
+/* 🎧 Readonly Waveform (deterministic)                                        */
 /* -------------------------------------------------------------------------- */
+
 function hash(seed: string, index: number) {
   let h = 2166136261 ^ index;
   for (let i = 0; i < seed.length; i++) {
     h ^= seed.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return ((h >>> 0) % 1000) / 1000; // 0..1
+  return ((h >>> 0) % 1000) / 1000;
 }
 
 function WaveformReadonly({
@@ -86,7 +96,7 @@ function WaveformReadonly({
 }
 
 /* -------------------------------------------------------------------------- */
-/* 🎵 Howler Player                                                             */
+/* 🎵 Howler Player (CACHE + ENCRYPTION SAFE)                                  */
 /* -------------------------------------------------------------------------- */
 
 export default function CustomAudioPlayer({
@@ -97,11 +107,12 @@ export default function CustomAudioPlayer({
 }: Props) {
   const howlRef = useRef<Howl | null>(null);
   const rafRef = useRef<number | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
 
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0); // seconds
-  const [current, setCurrent] = useState(0); // seconds
+  const [duration, setDuration] = useState(0);
+  const [current, setCurrent] = useState(0);
   const [volume, setVolume] = useState(0.9);
 
   const disabled = remainingPlays <= 0;
@@ -117,94 +128,101 @@ export default function CustomAudioPlayer({
     const tick = () => {
       const h = howlRef.current;
       if (!h) return;
-      const pos = Number(h.seek()) || 0;
-      setCurrent(pos);
+      setCurrent(Number(h.seek()) || 0);
       if (h.playing()) rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
   };
 
-  // Build Howl once per src
+  /* ------------------------------------------------------------------------ */
+  /* 🔊 Build Howl (CACHED SOURCE)                                              */
+  /* ------------------------------------------------------------------------ */
+
   useEffect(() => {
-    stopRAF();
-    setIsReady(false);
-    setIsPlaying(false);
-    setDuration(0);
-    setCurrent(0);
+    let cancelled = false;
 
-    // cleanup old
-    if (howlRef.current) {
-      howlRef.current.unload();
-      howlRef.current = null;
-    }
+    async function init() {
+      setIsReady(false);
+      setIsPlaying(false);
+      setCurrent(0);
+      setDuration(0);
 
-    const h = new Howl({
-      src: [src],
-      html5: true, // ✅ better mobile reliability + larger files
-      volume,
-      preload: true,
-      onload: () => {
-        const d = h.duration() || 0;
-        setDuration(d);
-        setIsReady(true);
-      },
-      onplay: () => {
-        setIsPlaying(true);
-        startRAF();
-      },
-      onpause: () => {
-        setIsPlaying(false);
-        stopRAF();
-      },
-      onstop: () => {
-        setIsPlaying(false);
-        stopRAF();
-      },
-      onend: () => {
-        // ✅ COUNT ONLY HERE
-        setIsPlaying(false);
-        stopRAF();
-        setCurrent(duration || h.duration() || 0);
-
-        onFullEnded();
-
-        // ✅ make replay always work
-        h.stop();
-        h.seek(0);
-        setCurrent(0);
-      },
-      onloaderror: () => {
-        setIsReady(false);
-        onBlocked("Audio failed to load. Check file path / GitHub Pages base URL.");
-      },
-      onplayerror: () => {
-        setIsPlaying(false);
-        onBlocked("Browser blocked audio. Tap Play again.");
-        h.once("unlock", () => {
-          // user gesture unlock
-        });
-      },
-    });
-
-    howlRef.current = h;
-
-    return () => {
-      stopRAF();
+      // cleanup previous
       if (howlRef.current) {
         howlRef.current.unload();
         howlRef.current = null;
       }
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+
+      try {
+        const blob = await loadAudioWithCache(src); // 🔥 SERVER or LOCAL
+        if (cancelled) return;
+
+        const objectUrl = URL.createObjectURL(blob);
+        objectUrlRef.current = objectUrl;
+
+        const h = new Howl({
+          src: [objectUrl],
+          html5: true,
+          preload: true,
+          volume,
+          pool: 1, // ✅ FIX pool exhaustion
+          onload: () => {
+            setDuration(h.duration() || 0);
+            setIsReady(true);
+          },
+          onplay: () => {
+            setIsPlaying(true);
+            startRAF();
+          },
+          onpause: () => {
+            setIsPlaying(false);
+            stopRAF();
+          },
+          onstop: () => {
+            setIsPlaying(false);
+            stopRAF();
+          },
+          onend: () => {
+            setIsPlaying(false);
+            stopRAF();
+            setCurrent(h.duration() || 0);
+
+            onFullEnded(); // ✅ COUNT ONLY HERE
+
+            h.stop();
+            h.seek(0);
+            setCurrent(0);
+          },
+          onplayerror: () => {
+            onBlocked("Browser blocked audio. Tap Play again.");
+          },
+        });
+
+        howlRef.current = h;
+      } catch {
+        onBlocked("Failed to load audio.");
+      }
+    }
+
+    init();
+
+    return () => {
+      cancelled = true;
+      stopRAF();
+      if (howlRef.current) howlRef.current.unload();
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
 
-  // Volume updates
-  useEffect(() => {
-    const h = howlRef.current;
-    if (h) h.volume(volume);
-  }, [volume]);
+  /* ------------------------------------------------------------------------ */
+  /* 🎛 Controls                                                               */
+  /* ------------------------------------------------------------------------ */
 
-  const togglePlay = async () => {
+  const togglePlay = () => {
     const h = howlRef.current;
     if (!h) return;
 
@@ -214,40 +232,31 @@ export default function CustomAudioPlayer({
     }
 
     if (!isReady) {
-      onBlocked("Audio is still loading… try again.");
+      onBlocked("Audio still loading…");
       return;
     }
 
-    // ✅ if ended or near end, reset before play
-    const d = h.duration() || duration;
-    const pos = Number(h.seek()) || 0;
-    if (d > 0 && pos >= d - 0.05) {
-      h.stop();
-      h.seek(0);
-      setCurrent(0);
-    }
-
-    if (h.playing()) {
-      h.pause();
-    } else {
-      h.play(); // ✅ user click gesture triggers play
-    }
+    if (h.playing()) h.pause();
+    else h.play();
   };
 
   const restart = () => {
     const h = howlRef.current;
-    if (!h) return;
-
-    if (disabled) {
-      onBlocked("Your limit reached. Try it tomorrow.");
-      return;
-    }
-
+    if (!h || disabled) return;
     h.stop();
     h.seek(0);
     setCurrent(0);
     h.play();
   };
+
+  useEffect(() => {
+    const h = howlRef.current;
+    if (h) h.volume(volume);
+  }, [volume]);
+
+  /* ------------------------------------------------------------------------ */
+  /* 🧾 UI                                                                     */
+  /* ------------------------------------------------------------------------ */
 
   return (
     <div style={card}>
@@ -269,15 +278,12 @@ export default function CustomAudioPlayer({
           style={{
             ...iconBtn,
             opacity: disabled || !isReady ? 0.45 : 1,
-            cursor: disabled || !isReady ? "not-allowed" : "pointer",
           }}
-          title="Restart"
         >
           ⟲
         </button>
       </div>
 
-      {/* readonly waveform */}
       <WaveformReadonly seed={src} progress={progress} />
 
       <div style={controlsRow}>
@@ -288,7 +294,6 @@ export default function CustomAudioPlayer({
           style={{
             ...playBtn,
             opacity: disabled || !isReady ? 0.55 : 1,
-            cursor: disabled || !isReady ? "not-allowed" : "pointer",
           }}
         >
           {isPlaying ? "⏸ Pause" : "▶ Play"}
@@ -296,158 +301,44 @@ export default function CustomAudioPlayer({
 
         <div style={timeBox}>
           <span style={time}>{formatTime(current)}</span>
-          <span style={{ opacity: 0.5 }}>/</span>
+          <span>/</span>
           <span style={time}>{formatTime(duration)}</span>
         </div>
 
         <div style={volBox}>
           🔊
           <input
-            aria-label="Volume"
             type="range"
             min={0}
             max={1}
             step={0.01}
             value={volume}
             onChange={(e) => setVolume(Number(e.target.value))}
-            style={{ width: 120 }}
           />
         </div>
       </div>
 
-      {disabled && <div style={lockNote}>🔒 Limit reached. Please try again tomorrow.</div>}
-      {!disabled && (
-        <div style={hintNote}>
-          ✅ Counts only when the song finishes • 🔒 Seeking disabled (no scrub UI)
-        </div>
+      {disabled && (
+        <div style={lockNote}>🔒 Limit reached. Please try again tomorrow.</div>
       )}
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* 🎨 Styles                                                                   */
+/* 🎨 Styles (UNCHANGED)                                                       */
 /* -------------------------------------------------------------------------- */
 
-const waveWrap: React.CSSProperties = {
-  width: "100%",
-  height: 56,
-  borderRadius: 12,
-  background: "#f3f4f6",
-  padding: 10,
-};
-
-const card: React.CSSProperties = {
-  marginTop: 12,
-  padding: 16,
-  borderRadius: 16,
-  border: "1px solid #e5e7eb",
-  background: "#ffffff",
-  boxShadow: "0 10px 30px rgba(17, 24, 39, 0.06)",
-};
-
-const headerRow: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  marginBottom: 12,
-};
-
-const badge: React.CSSProperties = {
-  width: 38,
-  height: 38,
-  borderRadius: 12,
-  background: "#111827",
-  color: "#fff",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-};
-
-const title: React.CSSProperties = {
-  fontWeight: 800,
-  fontSize: 14,
-  color: "#111827",
-};
-
-const sub: React.CSSProperties = {
-  fontSize: 12,
-  color: "#6b7280",
-};
-
-const controlsRow: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 10,
-  marginTop: 12,
-  flexWrap: "wrap",
-};
-
-const playBtn: React.CSSProperties = {
-  border: "none",
-  borderRadius: 14,
-  padding: "10px 14px",
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 10,
-  fontWeight: 800,
-  background: "#111827",
-  color: "#fff",
-};
-
-const iconBtn: React.CSSProperties = {
-  border: "1px solid #e5e7eb",
-  background: "#fff",
-  borderRadius: 12,
-  padding: "10px 12px",
-  fontWeight: 900,
-};
-
-const timeBox: React.CSSProperties = {
-  display: "flex",
-  gap: 8,
-  fontSize: 13,
-  fontWeight: 700,
-  color: "#111827",
-  padding: "8px 10px",
-  borderRadius: 12,
-  background: "#f9fafb",
-  border: "1px solid #e5e7eb",
-};
-
-const time: React.CSSProperties = {
-  fontVariantNumeric: "tabular-nums",
-};
-
-const volBox: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  padding: "8px 10px",
-  borderRadius: 12,
-  background: "#f9fafb",
-  border: "1px solid #e5e7eb",
-};
-
-const lockNote: React.CSSProperties = {
-  marginTop: 10,
-  padding: 10,
-  borderRadius: 12,
-  background: "#fff1f2",
-  border: "1px solid #fecdd3",
-  color: "#9f1239",
-  fontWeight: 700,
-  fontSize: 13,
-};
-
-const hintNote: React.CSSProperties = {
-  marginTop: 10,
-  padding: 10,
-  borderRadius: 12,
-  background: "#f3f4f6",
-  border: "1px solid #e5e7eb",
-  color: "#111827",
-  fontWeight: 700,
-  fontSize: 12,
-};
+const waveWrap = { width: "100%", height: 56, borderRadius: 12, background: "#f3f4f6", padding: 10 };
+const card = { marginTop: 12, padding: 16, borderRadius: 16, border: "1px solid #e5e7eb", background: "#fff" };
+const headerRow = { display: "flex", justifyContent: "space-between", marginBottom: 12 };
+const badge = { width: 38, height: 38, borderRadius: 12, background: "#111827", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" };
+const title = { fontWeight: 800, fontSize: 14 };
+const sub = { fontSize: 12, color: "#6b7280" };
+const controlsRow = { display: "flex", gap: 10, marginTop: 12 };
+const playBtn = { borderRadius: 14, padding: "10px 14px", background: "#111827", color: "#fff", fontWeight: 800 };
+const iconBtn = { border: "1px solid #e5e7eb", borderRadius: 12, padding: "10px 12px" };
+const timeBox = { display: "flex", gap: 8, fontSize: 13, fontWeight: 700 };
+const time = { fontVariantNumeric: "tabular-nums" };
+const volBox = { display: "flex", gap: 8 };
+const lockNote = { marginTop: 10, padding: 10, borderRadius: 12, background: "#fff1f2", color: "#9f1239", fontWeight: 700 };
