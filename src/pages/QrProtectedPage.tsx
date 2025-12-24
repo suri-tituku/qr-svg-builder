@@ -12,7 +12,11 @@ import { incrementAudioPlay, getRemainingPlays } from "../utils/audioLimit";
 
 import Toast from "../components/Toast";
 import CustomAudioPlayer from "../components/CustomAudioPlayer";
-import { getCachedAudioUrlOrFetch, clearExpiredAudioCache, clearAllAudioCache } from "../utils/audioCache";
+
+
+import { getCachedAudioUrlOrFetch } from "../utils/audioCache";
+import { clearExpiredAudioCache } from "../utils/audioCache";
+import { clearAllAudioCache } from "../utils/audioCache";
 
 /* -------------------------------------------------------------------------- */
 /* 🧩 Helpers                                                                  */
@@ -38,24 +42,26 @@ export default function QrProtectedPage() {
   const [toast, setToast] = useState("");
   const [remainingPlays, setRemainingPlays] = useState(getRemainingPlays());
 
-  // ✅ cached url for Howler (object URL)
+  // Object URL for Howler
   const [audioUrl, setAudioUrl] = useState<string>("");
 
-  // your mp3 in /public (GitHub pages uses BASE_URL)
-  const remoteAudioUrl = `${import.meta.env.BASE_URL}Raa_Baa_30s.mp3`;
+  // GitHub Pages–safe public path
+  const remoteAudioUrl =
+    window.location.origin +
+    import.meta.env.BASE_URL +
+    "Raa_Baa_30s.mp3";
+
 
   /* ------------------------------------------------------------------------ */
   /* 🔐 Session Guard + cache lifecycle                                        */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
-    // clear expired cached items occasionally
     clearExpiredAudioCache().catch(() => {});
 
     if (!isSessionValid()) {
       clearSession();
-      // optional: clear cache when session invalid
-      // clearAllAudioCache();
+      clearAllAudioCache().catch(() => {});
       navigate(`/qr/${id}`);
       return;
     }
@@ -64,11 +70,7 @@ export default function QrProtectedPage() {
       const times = getRemainingTimes();
       if (!times || !isSessionValid()) {
         clearSession();
-
-        // ✅ when session expires, optionally wipe cached audio
-        // If you want cache to disappear when session ends:
         clearAllAudioCache().catch(() => {});
-
         navigate(`/qr/${id}`);
         return;
       }
@@ -105,34 +107,40 @@ export default function QrProtectedPage() {
 
     (async () => {
       try {
-        // ✅ TTL: cache valid for 30 minutes (change as you need)
-        const url = await getCachedAudioUrlOrFetch({
-          key: `qr-audio-${id ?? "unknown"}`,
-          url: remoteAudioUrl,
-          ttlMs: 30 * 60 * 1000,
-          // enable encryption if you want (see utils/audioCrypto.ts)
-          encrypt: true,
-        });
+        const { blob, source } = await getCachedAudioUrlOrFetch(
+          remoteAudioUrl
+        );
 
-        if (!cancelled) setAudioUrl(url);
-      } catch (e) {
+        if (cancelled) return;
+
+        const objectUrl = URL.createObjectURL(blob);
+        setAudioUrl(objectUrl);
+
+        console.log(
+          source === "cache"
+            ? "✅ Audio loaded from LOCAL CACHE"
+            : "🌐 Audio fetched from NETWORK"
+        );
+      } catch (err) {
         if (!cancelled) {
-          setToast("Audio preload failed. Check GitHub Pages path / network.");
+          console.error(err);
+          setToast("⚠️ Failed to load audio.");
         }
       }
     })();
 
     return () => {
       cancelled = true;
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
-  }, [id, remoteAudioUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteAudioUrl]);
 
   /* ------------------------------------------------------------------------ */
   /* 🎵 Play Count — ONLY ON FULL END                                          */
   /* ------------------------------------------------------------------------ */
 
   function handleFullEnded() {
-    // ✅ ONLY place to count a play
     incrementAudioPlay();
     setRemainingPlays(getRemainingPlays());
   }
@@ -148,7 +156,9 @@ export default function QrProtectedPage() {
         <div style={header}>
           <div style={badge}>🔓 Protected</div>
           <h2 style={title}>QR Protected Content</h2>
-          <p style={subtitle}>Session + idle lock • Full-play limit enforced</p>
+          <p style={subtitle}>
+            Session + idle lock • Full-play limit enforced
+          </p>
         </div>
 
         {/* Timers */}
@@ -173,9 +183,8 @@ export default function QrProtectedPage() {
           />
         </div>
 
-        {/* 🎵 Howler Audio Player */}
+        {/* 🎵 Audio Player */}
         <CustomAudioPlayer
-          // If cached url ready use it, else fallback to remote
           src={audioUrl || remoteAudioUrl}
           remainingPlays={remainingPlays}
           onBlocked={(msg) => setToast(msg)}
@@ -189,7 +198,7 @@ export default function QrProtectedPage() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 🎨 Styles                                                                  */
+/* 🎨 Styles (UNCHANGED)                                                      */
 /* -------------------------------------------------------------------------- */
 
 const page: React.CSSProperties = {
@@ -223,9 +232,17 @@ const badge: React.CSSProperties = {
   marginBottom: 8,
 };
 
-const title: React.CSSProperties = { margin: 0, fontSize: 22, color: "#111827" };
+const title: React.CSSProperties = {
+  margin: 0,
+  fontSize: 22,
+  color: "#111827",
+};
 
-const subtitle: React.CSSProperties = { marginTop: 6, fontSize: 13, color: "#6b7280" };
+const subtitle: React.CSSProperties = {
+  marginTop: 6,
+  fontSize: 13,
+  color: "#6b7280",
+};
 
 const timers: React.CSSProperties = {
   marginTop: 16,
@@ -249,4 +266,7 @@ const imageWrap: React.CSSProperties = {
   border: "1px solid #e5e7eb",
 };
 
-const image: React.CSSProperties = { width: "100%", display: "block" };
+const image: React.CSSProperties = {
+  width: "100%",
+  display: "block",
+};
