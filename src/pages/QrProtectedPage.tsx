@@ -1,13 +1,37 @@
-// src/pages/QrProtectedPage.tsx
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import CustomVideoPlayerUltra from "../components/CustomVideoPlayerUltra";
+import CustomAudioPlayerUltra from "../components/CustomAudioPlayerUltra";
 
-import { isSessionValid, updateActivity, clearSession, getRemainingTimes } from "../utils/qrSession";
-import { incrementAudioPlay, getRemainingPlays } from "../utils/audioLimit";
-import { clearAllAudioCache, clearExpiredAudioCache } from "../utils/audioCache";
+
+import {
+  isSessionValid,
+  updateActivity,
+  clearSession,
+  getRemainingTimes,
+} from "../utils/qrSession";
+
+import {
+  incrementAudioPlay,
+  getRemainingPlays,
+} from "../utils/audioLimit";
+
+import {
+  getRemainingVideoPlays,
+  incrementVideoPlay,
+} from "../utils/videoLimit";
+
+import {
+  clearAllAudioCache,
+  clearExpiredAudioCache,
+} from "../utils/audioCache";
+
+import {
+  clearAllVideoCache,
+  clearExpiredVideoCache,
+} from "../utils/videoCache";
 
 import Toast from "../components/Toast";
-import CustomAudioPlayer from "../components/CustomAudioPlayer";
 
 /* -------------------------------------------------------------------------- */
 /* 🧩 Helpers                                                                  */
@@ -30,20 +54,35 @@ export default function QrProtectedPage() {
   const [idleLeft, setIdleLeft] = useState(0);
   const [toast, setToast] = useState("");
 
-  const [remainingPlays, setRemainingPlays] = useState<number>(0);
+  const [audioRemaining, setAudioRemaining] = useState(0);
+  const [videoRemaining, setVideoRemaining] = useState(0);
+
   const [limitReady, setLimitReady] = useState(false);
 
-  // ✅ Remote URL (works in dev + GitHub pages)
+  /* ------------------------------------------------------------------------ */
+  /* ✅ Remote media URLs (GitHub Pages safe)                                  */
+  /* ------------------------------------------------------------------------ */
   const remoteAudioUrl =
-    window.location.origin + import.meta.env.BASE_URL + "Raa_Baa_30s.mp3";
+    window.location.origin +
+    import.meta.env.BASE_URL +
+    "Raa_Baa_30s.mp3";
 
-  // load remaining plays once (async limit system)
+  const remoteVideoUrl =
+    window.location.origin +
+    import.meta.env.BASE_URL +
+    "Sample_720p_30s.mp4";
+
+  /* ------------------------------------------------------------------------ */
+  /* 🎯 Load limits once                                                       */
+  /* ------------------------------------------------------------------------ */
   useEffect(() => {
     let dead = false;
     (async () => {
-      const rem = await getRemainingPlays();
+      const a = await getRemainingPlays();
+      const v = await getRemainingVideoPlays();
       if (!dead) {
-        setRemainingPlays(rem);
+        setAudioRemaining(a);
+        setVideoRemaining(v);
         setLimitReady(true);
       }
     })();
@@ -56,12 +95,13 @@ export default function QrProtectedPage() {
   /* 🔐 Session Guard + cache lifecycle                                        */
   /* ------------------------------------------------------------------------ */
   useEffect(() => {
-    // clean old cache in background
     clearExpiredAudioCache().catch(() => {});
+    clearExpiredVideoCache().catch(() => {});
 
     if (!isSessionValid()) {
       clearSession();
       clearAllAudioCache().catch(() => {});
+      clearAllVideoCache().catch(() => {});
       navigate(`/qr/${id}`);
       return;
     }
@@ -71,6 +111,7 @@ export default function QrProtectedPage() {
       if (!times || !isSessionValid()) {
         clearSession();
         clearAllAudioCache().catch(() => {});
+        clearAllVideoCache().catch(() => {});
         navigate(`/qr/${id}`);
         return;
       }
@@ -78,28 +119,41 @@ export default function QrProtectedPage() {
       setSessionLeft(times.sessionRemaining);
       setIdleLeft(times.idleRemaining);
 
-      // refresh remaining plays too (async)
-      const rem = await getRemainingPlays();
-      setRemainingPlays(rem);
+      setAudioRemaining(await getRemainingPlays());
+      setVideoRemaining(await getRemainingVideoPlays());
     }, 1000);
 
-    const events = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "touchmove"] as const;
+    const events = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "scroll",
+      "touchstart",
+      "touchmove",
+    ] as const;
+
     const onActivity = () => updateActivity();
     events.forEach((e) => window.addEventListener(e, onActivity));
 
     return () => {
       clearInterval(timer);
-      events.forEach((e) => window.removeEventListener(e, onActivity));
+      events.forEach((e) =>
+        window.removeEventListener(e, onActivity)
+      );
     };
   }, [navigate, id]);
 
   /* ------------------------------------------------------------------------ */
-  /* 🎵 Play Count — ONLY ON FULL END                                          */
+  /* 🎵 Count ONLY on full end                                                 */
   /* ------------------------------------------------------------------------ */
-  async function handleFullEnded() {
+  async function handleAudioEnded() {
     await incrementAudioPlay();
-    const rem = await getRemainingPlays();
-    setRemainingPlays(rem);
+    setAudioRemaining(await getRemainingPlays());
+  }
+
+  async function handleVideoEnded() {
+    await incrementVideoPlay();
+    setVideoRemaining(await getRemainingVideoPlays());
   }
 
   /* ------------------------------------------------------------------------ */
@@ -111,7 +165,9 @@ export default function QrProtectedPage() {
         <div style={header}>
           <div style={badge}>🔓 Protected</div>
           <h2 style={title}>QR Protected Content</h2>
-          <p style={subtitle}>Session + idle lock • Full-play limit enforced</p>
+          <p style={subtitle}>
+            Session + idle lock • Play limits enforced
+          </p>
         </div>
 
         <div style={timers}>
@@ -134,30 +190,42 @@ export default function QrProtectedPage() {
           />
         </div>
 
-        {/* Player keeps caching + encryption internally.
-            Logs will show SERVER on first load, CACHE on next load (even refresh). */}
-        <CustomAudioPlayer
+        {/* 🎧 AUDIO */}
+        <CustomAudioPlayerUltra
           src={remoteAudioUrl}
-          remainingPlays={limitReady ? remainingPlays : 0}
-          onBlocked={(msg) => setToast(msg)}
-          onFullEnded={handleFullEnded}
+          remainingPlays={audioRemaining}
+          onBlocked={setToast}
+          onFullEnded={handleAudioEnded}
         />
 
-        {toast && <Toast message={toast} onClose={() => setToast("")} />}
+        {/* 🎬 VIDEO */}
+        <CustomVideoPlayerUltra
+            src={remoteVideoUrl}
+            remainingPlays={videoRemaining}
+            onBlocked={setToast}
+            onFullEnded={handleVideoEnded}
+          />
+
+
+
+        {toast && (
+          <Toast message={toast} onClose={() => setToast("")} />
+        )}
       </div>
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* 🎨 Styles (keep UI stable)                                                 */
+/* 🎨 Styles (UNCHANGED)                                                      */
 /* -------------------------------------------------------------------------- */
 const page: React.CSSProperties = {
   minHeight: "100vh",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  background: "radial-gradient(1200px 600px at 50% 0%, #000 0%, #292929 55%, #444 100%)",
+  background:
+    "radial-gradient(1200px 600px at 50% 0%, #000 0%, #292929 55%, #444 100%)",
 };
 
 const card: React.CSSProperties = {
@@ -182,9 +250,17 @@ const badge: React.CSSProperties = {
   marginBottom: 8,
 };
 
-const title: React.CSSProperties = { margin: 0, fontSize: 22, color: "#111827" };
+const title: React.CSSProperties = {
+  margin: 0,
+  fontSize: 22,
+  color: "#111827",
+};
 
-const subtitle: React.CSSProperties = { marginTop: 6, fontSize: 13, color: "#6b7280" };
+const subtitle: React.CSSProperties = {
+  marginTop: 6,
+  fontSize: 13,
+  color: "#6b7280",
+};
 
 const timers: React.CSSProperties = {
   marginTop: 16,
@@ -208,4 +284,7 @@ const imageWrap: React.CSSProperties = {
   border: "1px solid #e5e7eb",
 };
 
-const image: React.CSSProperties = { width: "100%", display: "block" };
+const image: React.CSSProperties = {
+  width: "100%",
+  display: "block",
+};

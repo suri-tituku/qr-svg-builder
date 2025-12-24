@@ -1,6 +1,6 @@
 // src/utils/qrSession.ts
 const SESSION_MS = 10 * 60 * 1000; // 10 minutes total session
-const IDLE_MS = 60 * 1000;         // 60 seconds idle
+const IDLE_MS = 5 * 60 * 1000;         // 5 minutes idle
 
 const KEY = "qr-session-v1";
 

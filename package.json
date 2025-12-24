@@ -11,12 +11,15 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "@vidstack/react": "^0.6.15",
+    "framer-motion": "^12.23.26",
     "howler": "^2.2.4",
     "lucide-react": "^0.562.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.11.0"
+    "react-router-dom": "^7.11.0",
+    "wavesurfer.js": "^7.12.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

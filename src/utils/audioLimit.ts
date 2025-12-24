@@ -1,5 +1,5 @@
 // src/utils/audioLimit.ts
-const MAX_PLAYS = 2;
+const MAX_PLAYS = 5;
 const SALT = "bfouru-audio-limit-v2"; // change occasionally if needed
 
 type LimitState = {
