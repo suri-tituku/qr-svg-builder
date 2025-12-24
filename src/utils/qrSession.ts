@@ -1,120 +1,67 @@
-/* -------------------------------------------------------------------------- */
-/* ⏱️ Session Configuration                                                   */
-/* -------------------------------------------------------------------------- */
+// src/utils/qrSession.ts
+const SESSION_MS = 10 * 60 * 1000; // 10 minutes total session
+const IDLE_MS = 60 * 1000;         // 60 seconds idle
 
-export const IDLE_LIMIT = 1 * 60 * 1000; // 2 minutes (idle)
-export const MAX_SESSION = 2 * 60 * 1000; // 5 minutes (absolute)
+const KEY = "qr-session-v1";
 
-/* -------------------------------------------------------------------------- */
-/* 🧠 Types                                                                   */
-/* -------------------------------------------------------------------------- */
+type Session = {
+  sessionStart: number;
+  lastActivity: number;
+};
 
-export interface QrSession {
-  unlockedAt: number;
-  lastActivityAt: number;
+function now() {
+  return Date.now();
 }
 
-/* -------------------------------------------------------------------------- */
-/* 🔐 Session Validation                                                      */
-/* -------------------------------------------------------------------------- */
-
-export function isSessionValid(): boolean {
-  const raw = sessionStorage.getItem("qrSession");
-  if (!raw) return false;
-
+function read(): Session | null {
   try {
-    const { unlockedAt, lastActivityAt }: QrSession = JSON.parse(raw);
-    const now = Date.now();
-
-    // Absolute expiry (even if user is active)
-    if (now - unlockedAt > MAX_SESSION) {
-      return false;
-    }
-
-    // Idle expiry (no activity)
-    if (now - lastActivityAt > IDLE_LIMIT) {
-      return false;
-    }
-
-    return true;
-  } catch {
-    // Corrupted session
-    return false;
-  }
-}
-
-/* -------------------------------------------------------------------------- */
-/* 🔄 Activity Tracking                                                       */
-/* -------------------------------------------------------------------------- */
-
-export function updateActivity(): void {
-  const raw = sessionStorage.getItem("qrSession");
-  if (!raw) return;
-
-  try {
-    const data: QrSession = JSON.parse(raw);
-
-    sessionStorage.setItem(
-      "qrSession",
-      JSON.stringify({
-        ...data,
-        lastActivityAt: Date.now(),
-      })
-    );
-  } catch {
-    // Ignore invalid session data
-  }
-}
-
-/* -------------------------------------------------------------------------- */
-/* 🧹 Clear Session                                                           */
-/* -------------------------------------------------------------------------- */
-
-export function clearSession(): void {
-  sessionStorage.removeItem("qrSession");
-}
-
-/* -------------------------------------------------------------------------- */
-/* ⏳ Countdown Helpers (UX timers)                                            */
-/* -------------------------------------------------------------------------- */
-
-export function getRemainingTimes(): {
-  sessionRemaining: number;
-  idleRemaining: number;
-} | null {
-  const raw = sessionStorage.getItem("qrSession");
-  if (!raw) return null;
-
-  try {
-    const { unlockedAt, lastActivityAt }: QrSession = JSON.parse(raw);
-    const now = Date.now();
-
-    return {
-      sessionRemaining: Math.max(
-        0,
-        MAX_SESSION - (now - unlockedAt)
-      ),
-      idleRemaining: Math.max(
-        0,
-        IDLE_LIMIT - (now - lastActivityAt)
-      ),
-    };
+    const raw = sessionStorage.getItem(KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as Session;
+    if (!s?.sessionStart || !s?.lastActivity) return null;
+    return s;
   } catch {
     return null;
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* 🆕 Initialize Session (on password success)                                */
-/* -------------------------------------------------------------------------- */
+function write(s: Session) {
+  sessionStorage.setItem(KEY, JSON.stringify(s));
+}
 
 export function startSession(): void {
-  const now = Date.now();
+  const t = now();
+  write({ sessionStart: t, lastActivity: t });
+}
 
-  const session: QrSession = {
-    unlockedAt: now,
-    lastActivityAt: now,
+export function updateActivity(): void {
+  const s = read();
+  if (!s) return;
+  write({ ...s, lastActivity: now() });
+}
+
+export function clearSession(): void {
+  sessionStorage.removeItem(KEY);
+}
+
+export function isSessionValid(): boolean {
+  const s = read();
+  if (!s) return false;
+
+  const t = now();
+  const sessionRemaining = SESSION_MS - (t - s.sessionStart);
+  const idleRemaining = IDLE_MS - (t - s.lastActivity);
+
+  return sessionRemaining > 0 && idleRemaining > 0;
+}
+
+export function getRemainingTimes(): { sessionRemaining: number; idleRemaining: number } | null {
+  const s = read();
+  if (!s) return null;
+
+  const t = now();
+  return {
+    sessionRemaining: Math.max(0, SESSION_MS - (t - s.sessionStart)),
+    idleRemaining: Math.max(0, IDLE_MS - (t - s.lastActivity)),
   };
-
-  sessionStorage.setItem("qrSession", JSON.stringify(session));
 }

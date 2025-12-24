@@ -1,32 +1,26 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { startSession } from "../utils/qrSession";
 
-const CORRECT_PASSWORD = "123456789"; // demo only
+const CORRECT_PASSWORD = "1234"; // demo only
 
 export default function QrPasswordPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   function handleSubmit() {
-  if (password === CORRECT_PASSWORD) {
-    const now = Date.now();
+    if (password === CORRECT_PASSWORD) {
+      // ✅ SINGLE SOURCE OF TRUTH
+      startSession();
 
-    sessionStorage.setItem(
-      "qrSession",
-      JSON.stringify({
-        unlockedAt: now,
-        lastActivityAt: now,
-      })
-    );
-
-    navigate(`/qr/${id}/content`);
-  } else {
-    setError("Invalid password");
+      navigate(`/qr/${id}/content`);
+    } else {
+      setError("Invalid password");
+    }
   }
-}
-
 
   return (
     <div style={container}>
@@ -41,7 +35,7 @@ export default function QrPasswordPage() {
         placeholder="Enter password"
       />
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      {error && <p style={{ color: "red", marginTop: 8 }}>{error}</p>}
 
       <button onClick={handleSubmit} style={button}>
         Unlock
@@ -49,6 +43,10 @@ export default function QrPasswordPage() {
     </div>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* 🎨 Styles (unchanged)                                                       */
+/* -------------------------------------------------------------------------- */
 
 const container = {
   maxWidth: 360,
